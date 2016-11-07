@@ -1,6 +1,9 @@
 package logrus_fluent
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/Sirupsen/logrus"
 	"github.com/fluent/fluent-logger-golang/fluent"
 )
@@ -21,6 +24,10 @@ const (
 	// If missing in the log fields, entry.Message is set to this field.
 	MessageField = "message"
 )
+
+var Prefix = "_"
+
+var AlwaysSentFields logrus.Fields = make(logrus.Fields)
 
 var defaultLevels = []logrus.Level{
 	logrus.PanicLevel,
@@ -127,14 +134,37 @@ func (hook *FluentHook) Fire(entry *logrus.Entry) error {
 		defer logger.Close()
 	}
 
+	fmt.Println(AlwaysSentFields)
+	//add AlwaysSentFields
+	entry.WithFields(AlwaysSentFields)
+
 	// Create a map for passing to FluentD
 	data := make(logrus.Fields)
 	for k, v := range entry.Data {
+		fmt.Println(k)
 		if _, ok := hook.ignoreFields[k]; ok {
 			continue
 		}
 		if fn, ok := hook.filters[k]; ok {
 			v = fn(v)
+		}
+
+		switch v := v.(type) {
+		case error:
+			// Otherwise errors are ignored by `encoding/json`
+			// https://github.com/Sirupsen/logrus/issues/377
+			data[k] = v.Error()
+		default:
+			data[k] = v
+		}
+
+		//remove the prefix when logging to fluentd and remove fields starting with the prefix for subsequent log Fires
+		if Prefix != "" && strings.HasPrefix(k, Prefix) {
+			kTrimmed := strings.TrimPrefix(k, Prefix)
+			if _, inMap := entry.Data[kTrimmed]; !inMap {
+				delete(entry.Data, k)
+				k = kTrimmed
+			}
 		}
 		data[k] = v
 	}
