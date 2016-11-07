@@ -1,7 +1,6 @@
 package logrus_fluent
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/Sirupsen/logrus"
@@ -48,6 +47,7 @@ type FluentHook struct {
 	port   int
 	levels []logrus.Level
 	tag    *string
+	app    string
 
 	ignoreFields map[string]struct{}
 	filters      map[string]func(interface{}) interface{}
@@ -55,6 +55,11 @@ type FluentHook struct {
 
 // New returns initialized logrus hook for fluentd with persistent fluentd logger.
 func New(host string, port int) (*FluentHook, error) {
+	return NewAppHook(host, port, "")
+}
+
+// NewAppHook returns initialized logrus hook for fluentd with persistent fluentd logger and sets ther application name.
+func NewAppHook(host string, port int, app string) (*FluentHook, error) {
 	fd, err := fluent.New(fluent.Config{FluentHost: host, FluentPort: port})
 	if err != nil {
 		return nil, err
@@ -63,8 +68,10 @@ func New(host string, port int) (*FluentHook, error) {
 	return &FluentHook{
 		levels:       defaultLevels,
 		Fluent:       fd,
+		tag:          nil,
 		ignoreFields: make(map[string]struct{}),
 		filters:      make(map[string]func(interface{}) interface{}),
+		app:          app,
 	}, nil
 }
 
@@ -78,6 +85,7 @@ func NewHook(host string, port int) *FluentHook {
 		tag:          nil,
 		ignoreFields: make(map[string]struct{}),
 		filters:      make(map[string]func(interface{}) interface{}),
+		app:          "",
 	}
 }
 
@@ -134,14 +142,18 @@ func (hook *FluentHook) Fire(entry *logrus.Entry) error {
 		defer logger.Close()
 	}
 
-	fmt.Println(AlwaysSentFields)
 	//add AlwaysSentFields
-	entry.WithFields(AlwaysSentFields)
+	for k, v := range AlwaysSentFields {
+		entry.Data[k] = v
+	}
+
+	if hook.app != "" {
+		entry.Data["_app"] = hook.app
+	}
 
 	// Create a map for passing to FluentD
 	data := make(logrus.Fields)
 	for k, v := range entry.Data {
-		fmt.Println(k)
 		if _, ok := hook.ignoreFields[k]; ok {
 			continue
 		}
@@ -169,7 +181,7 @@ func (hook *FluentHook) Fire(entry *logrus.Entry) error {
 	}
 
 	setLevelString(entry, data)
-	tag := hook.getTagAndDel(entry, data)
+	tag := hook.getTag(entry, data)
 	if tag != entry.Message {
 		setMessage(entry, data)
 	}
@@ -183,25 +195,35 @@ func (hook *FluentHook) Fire(entry *logrus.Entry) error {
 // 1. if tag is set in the hook, use it.
 // 2. if tag is set in custom fields, use it.
 // 3. if cannot find tag data, use entry.Message as tag.
-func (hook *FluentHook) getTagAndDel(entry *logrus.Entry, data logrus.Fields) string {
+func (hook *FluentHook) getTag(entry *logrus.Entry, data logrus.Fields) string {
 	// use static tag from
 	if hook.tag != nil {
 		return *hook.tag
 	}
 
 	tagField, ok := data[TagField]
-	if !ok {
-		return entry.Message
+	var tag string
+	if ok {
+		tag, ok = tagField.(string)
 	}
 
-	tag, ok := tagField.(string)
 	if !ok {
-		return entry.Message
+		if hook.app != "" {
+			return hook.app + ".main"
+		} else {
+			return entry.Message
+		}
 	}
 
-	// remove tag from data fields
-	delete(data, TagField)
-	return tag
+	if hook.app != "" {
+		if tag != "" {
+			return hook.app + "." + tag
+		} else {
+			return hook.app
+		}
+	} else {
+		return tag
+	}
 }
 
 func setLevelString(entry *logrus.Entry, data logrus.Fields) {
