@@ -149,15 +149,6 @@ func (hook *FluentHook) Fire(entry *logrus.Entry) error {
 			v = fn(v)
 		}
 
-		switch v := v.(type) {
-		case error:
-			// Otherwise errors are ignored by `encoding/json`
-			// https://github.com/Sirupsen/logrus/issues/377
-			data[k] = v.Error()
-		default:
-			data[k] = v
-		}
-
 		//remove the prefix when logging to fluentd and remove fields starting with the prefix for subsequent log Fires
 		if Prefix != "" && strings.HasPrefix(k, Prefix) {
 			kTrimmed := strings.TrimPrefix(k, Prefix)
@@ -166,7 +157,15 @@ func (hook *FluentHook) Fire(entry *logrus.Entry) error {
 				k = kTrimmed
 			}
 		}
-		data[k] = v
+
+		switch v := v.(type) {
+		case error:
+			// Otherwise errors are ignored by `encoding/json`
+			// https://github.com/Sirupsen/logrus/issues/377
+			data[k] = v.Error()
+		default:
+			data[k] = v
+		}
 	}
 
 	setLevelString(entry, data)
