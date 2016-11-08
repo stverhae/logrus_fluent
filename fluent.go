@@ -41,7 +41,8 @@ type FluentHook struct {
 	// Fluent is actual fluentd logger.
 	// If set, this logger is used for logging.
 	// otherwise new logger is created every time.
-	Fluent *fluent.Fluent
+	Fluent     *fluent.Fluent
+	PrefixOnly bool
 
 	host   string
 	port   int
@@ -58,6 +59,16 @@ func New(host string, port int) (*FluentHook, error) {
 	return NewAppHook(host, port, "")
 }
 
+func NewPrefixHook() *FluentHook {
+	return &FluentHook{
+		levels:       defaultLevels,
+		PrefixOnly:   true,
+		tag:          nil,
+		ignoreFields: make(map[string]struct{}),
+		filters:      make(map[string]func(interface{}) interface{}),
+	}
+}
+
 // NewAppHook returns initialized logrus hook for fluentd with persistent fluentd logger and sets ther application name.
 func NewAppHook(host string, port int, app string) (*FluentHook, error) {
 	fd, err := fluent.New(fluent.Config{FluentHost: host, FluentPort: port})
@@ -68,6 +79,7 @@ func NewAppHook(host string, port int, app string) (*FluentHook, error) {
 	return &FluentHook{
 		levels:       defaultLevels,
 		Fluent:       fd,
+		PrefixOnly:   false,
 		tag:          nil,
 		ignoreFields: make(map[string]struct{}),
 		filters:      make(map[string]func(interface{}) interface{}),
@@ -81,6 +93,7 @@ func NewHook(host string, port int) *FluentHook {
 	return &FluentHook{
 		host:         host,
 		port:         port,
+		PrefixOnly:   false,
 		levels:       defaultLevels,
 		tag:          nil,
 		ignoreFields: make(map[string]struct{}),
@@ -127,6 +140,16 @@ func (hook *FluentHook) AddFilter(name string, fn func(interface{}) interface{})
 func (hook *FluentHook) Fire(entry *logrus.Entry) error {
 	var logger *fluent.Fluent
 	var err error
+
+	//if PrefixOnly hook, filter out the prefixes and return
+	if hook.PrefixOnly {
+		for k := range entry.Data {
+			if Prefix != "" && strings.HasPrefix(k, Prefix) {
+				delete(entry.Data, k)
+			}
+		}
+		return nil
+	}
 
 	switch {
 	case hook.Fluent != nil:
