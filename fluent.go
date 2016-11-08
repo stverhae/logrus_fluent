@@ -71,7 +71,7 @@ func NewPrefixHook() *FluentHook {
 
 // NewAppHook returns initialized logrus hook for fluentd with persistent fluentd logger and sets ther application name.
 func NewAppHook(host string, port int, app string) (*FluentHook, error) {
-	fd, err := fluent.New(fluent.Config{FluentHost: host, FluentPort: port})
+	fd, err := fluent.New(fluent.Config{FluentHost: host, FluentPort: port, MarshalAsJSON: true})
 	if err != nil {
 		return nil, err
 	}
@@ -156,8 +156,9 @@ func (hook *FluentHook) Fire(entry *logrus.Entry) error {
 		logger = hook.Fluent
 	default:
 		logger, err = fluent.New(fluent.Config{
-			FluentHost: hook.host,
-			FluentPort: hook.port,
+			FluentHost:    hook.host,
+			FluentPort:    hook.port,
+			MarshalAsJSON: true,
 		})
 		if err != nil {
 			return err
